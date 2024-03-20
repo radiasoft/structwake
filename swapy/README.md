@@ -1,10 +1,10 @@
 # swapy
-`swapy` (***s***tructure-based ***w***akefield ***a***cceleration with ***Py***thon) is a package for modeling particle acceleration via structure-based wakefields. 
+## ***S***tructure-based ***W***akefield ***A***cceleration with ***Py***thon
+`swapy` is a package for modeling particle acceleration and manipulation via structure-based wakefields. 
 
 ## Installation
 
-To install this package, first download a copy of the source code. Once downloaded, you can install the package by running the
-following command:
+Once the source code has been downloaded, you can install the package by running the following command:
 
 ```python3 -m pip install ./swapy```
 
