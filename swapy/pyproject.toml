@@ -1,0 +1,30 @@
+# -*- coding: utf-8 -*-
+
+[project]
+name = "swapy"
+version = "0.0.0"
+authors = [{name="RadiaSoft LLC", email="pip@radiasoft.net"}, {name="Philippe Piot", email="ppiot@niu.edu"}]
+description = "Structure-based Wakefield Acceleration modeling in Python"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "argparse", 
+    "ruamel.yaml",
+    "scipy",
+    "numpy",
+]
+
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "License :: OSI Approved :: Apache-2.0",
+    "Operating System :: OS Independent",
+]
+
+[project.scripts]
+swamodel = "swapy._scripts:runmodel"
+
+[project.urls]
+"Homepage" = "https://github.com/radiasoft/structwake"
+"Bug Tracker" = "https://github.com/radiasoft/structwake/issues"
