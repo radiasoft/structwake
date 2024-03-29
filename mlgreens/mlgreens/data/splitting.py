@@ -18,6 +18,13 @@ class DataSubset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         parent_index = self.indices[index]
         return self.parent_set[parent_index]
+    
+    def __getattr__(self, attr):
+
+        try:
+            return getattr(self, attr)
+        except:
+            return getattr(self.parent_set, attr)            
 
 def split_data(data, split, seed=None):
     """Splits a dataset in two and returns the subsets
@@ -33,7 +40,7 @@ def split_data(data, split, seed=None):
     n_data = len(data)
     n_set1 = int(split * n_data)
     
-    set1_ids = set(random.choice(range(n_data), size=n_set1))
+    set1_ids = set(random.choice(range(n_data), size=n_set1, replace=False))
     subset1 = DataSubset(data, list(set1_ids))
 
     set2_ids = set(range(n_data)) - set1_ids

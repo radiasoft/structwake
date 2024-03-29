@@ -155,10 +155,10 @@ class Cylinder:
             AL = -4. / (self.epsilon * self.a * self.b)
             RL = 1. + 0. * np.einsum('i,j->ij', r0, R)
             SL = np.cos(np.einsum('i,j->ij', Z, Kml)) * Gml
-            GL =  AL * np.einsum('ij,kl->ijkl', RL, SL)
+            GL =  AL * np.einsum('ij,kl->iljk', RL, SL)
 
             # Return trivial transverse Green's function
-            GT = np.zeros((nS, nR, nZ, n_roots))
+            GT = np.zeros((nS, n_roots, nR, nZ))
         
         # Compute Green's functions with radial dependence (m>0)
         else:
@@ -167,12 +167,12 @@ class Cylinder:
             AL = 8./self.a**2
             RL = (np.einsum('i,j->ij', r0, R) / self.b**2)**m
             SL = np.cos(np.einsum('i,j->ij', Z, Kml)) * Gml
-            GL = AL * np.einsum('ij,kl->ijkl', RL, SL)
+            GL = AL * np.einsum('ij,kl->iljk', RL, SL)
 
             # Compute transverse Green's function
             AT = 8./self.a**2 * m * np.sqrt(self.epsilon-1.)
             RT = np.einsum('i,j->ij', (r0/self.b)**m, (R/self.a)**(m-1))     
             ST = np.sin(np.einsum('i,j->ij', Z, Kml)) * Gml
-            GT = AT * np.einsum('ij,kl->ijkl', RT, ST)
+            GT = AT * np.einsum('ij,kl->iljk', RT, ST)
         
         return GL, GT

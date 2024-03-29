@@ -29,14 +29,15 @@ class ConvUnit(torch.nn.Module):
         else:
             raise ValueError("\'dimension\' must be 1, 2, or 3")
         
+        
         # Construct convolutional unit
         self.conv = torch.nn.Sequential(
-            Conv(in_channels, out_channels, conv_kernel, padding="same", dtype=float),
+            Conv(in_channels, out_channels, conv_kernel, padding='same', dtype=torch.float),
             activation(),
-            BatchNorm(out_channels, dtype=float),
-            Conv(out_channels, out_channels, conv_kernel, padding="same", dtype=float),
+            BatchNorm(out_channels, dtype=torch.float),
+            Conv(out_channels, out_channels, conv_kernel, padding='same', dtype=torch.float),
             activation(),
-            BatchNorm(out_channels, dtype=float),
+            BatchNorm(out_channels, dtype=torch.float),
         )            
 
     def forward(self, x):
@@ -45,7 +46,7 @@ class ConvUnit(torch.nn.Module):
 class ContractionLayer(torch.nn.Module):
     """A single CNN layer that contracts inputs"""
 
-    def __init__(self, in_channels, out_channels, conv_kernel, activation, pool_kernel, dimension=2):
+    def __init__(self, in_channels, out_channels, pool_kernel, conv_kernel, activation,  dimension=2):
         """Args:
           - in_channels: Number of input channels
           - out_channels: Number of output channels
@@ -76,7 +77,7 @@ class ContractionLayer(torch.nn.Module):
 class ExpansionLayer(torch.nn.Module):
     """A single CNN layer that expands inputs"""
 
-    def __init__(self, in_channels, out_channels, conv_kernel, activation, upsample_kernel, dimension=2):
+    def __init__(self, in_channels, out_channels, upsample_kernel, conv_kernel, activation, dimension=2):
         """Args:
           - in_channels: Number of input channels
           - out_channels: Number of output channels
@@ -97,87 +98,8 @@ class ExpansionLayer(torch.nn.Module):
         else:
             raise ValueError("\'dimension\' must be 1, 2, or 3")
 
-        self.upsample = ConvTranspose(in_channels, out_channels, upsample_kernel, stride=upsample_kernel, dtype=float)
         self.conv = ConvUnit(in_channels, out_channels, conv_kernel, activation, dimension)
+        self.upsample = ConvTranspose(out_channels, out_channels, upsample_kernel, stride=upsample_kernel, dtype=torch.float)
 
     def forward(self, x):
-        return self.conv(self.upsample(x))
-
-class CNN(torch.nn.Module):
-    """A convolutional neural network"""
-
-    def __init__(
-        self, in_channels, n_out, n_layers, n_filters, conv_kernel=3, sample_kernel=2,
-        conv_activation='LeakyReLU', output_activation="Sigmoid", dropout=.1, dimension=2, action="contract"
-    ):
-        """Args:
-          - in_channels: Number of channels in the input
-          - n_out: Number of output variables
-          - n_layers: Number of layers in the network
-          - n_filters: Base dimension of convolutional filters (doubled at each layer)
-          - conv_kernel: Kernel dimensions for regular convolutional layers (default 3)
-          - sample_kernel: Kernel dimensions for max-pooling or up-sampling layers (default 2)
-          - dropout: Dropout rate (list/tuple or float) between consecutive layers (default .1)
-          - conv_activation: Class of activation layer to apply after convolutions (default 'ReLU')
-          - output_activation: Class of activation layer to apply after final 2D convolution (default 'Sigmoid')
-          - dimensions: Input dimension (1, 2, or 3, default 3)
-        """        
-
-        super().__init__()
-
-        #
-        conv_activation = getattr(torch.nn, conv_activation)
-        output_activation = getattr(torch.nn, output_activation)     
-
-        # Set filter sizing lambda function for expansion or contraction
-        action = action.lower()
-        if action == "contract":
-            filter_size = lambda l: [n_filters*2**l, n_filters*2**(l+1)]
-            ConvLayer = ContractionLayer
-        elif action == "expand":
-            filter_size = lambda l: [n_filters*2**(l+1), n_filters*2**l]
-            ConvLayer = ExpansionLayer
-        else:
-            raise ValueError("'action' must be either 'contract' or 'expand'")
-        
-        # Define layer dropouts as a list
-        if hasattr(dropout, '__len__'):
-            dropout = [d for d in dropout]
-        else:
-            dropout = [dropout,]*n_layers
-
-        # Add the first convolutional unit
-        self.input_layer = ConvUnit(in_channels, n_filters, conv_kernel, conv_activation, dimension)
-
-        # Add convolutional layers (with optional dropout layers)
-        for l in range(n_layers):
-            filters = filter_size(l)
-            setattr(
-                self, "covolution_{:d}".format(l+1),
-                ConvLayer(filters[0], filters[1], conv_kernel, conv_activation, sample_kernel, dimension)
-            )
-            if dropout[l]:
-                setattr(self, "dropout_{:d}".format(l+1), torch.nn.Dropout(p=dropout[l]))
-
-        # Add final convolutional layer that produces output
-        self.output_layer = torch.nn.Sequential(
-            ConvLayer(filters[1], n_out, (1,1), output_activation, sample_kernel, dimension),
-            output_activation()
-        )
-
-    def forward(self, x):
-        """Defines the computation performed at every call.
-
-        Args:
-          - x: Input on which computations are performed
-        """
-
-        # Compute & store hidden value at the end of the input layer
-        h = self.input_layer(x)
-
-        # Compute & store hidden values after each contraction layer
-        for l in range(self.hypers["n_layers"]):
-            h = getattr(self, "convolution_{:d}".format(l+1))(h)
-        
-        # Compute & return final output
-        return self.output_layer(h)
+        return self.upsample(self.conv(x))

@@ -1,4 +1,6 @@
 
+import torch
+import numpy as np
 
 def scale_minmax(input_tensor):
     """Scales input data stored in a numpy ndarray to the [0, 1] range
@@ -35,3 +37,21 @@ def unscale_minmax(input_tensor, scales):
     output_tensor += scales[0]
 
     return output_tensor
+
+def factor_resize(data, factor):
+    
+    # Do nothing if the scaling factor is unity
+    if factor==1:
+        return data.clone()
+
+    # Determine output dimensions
+    final_size = np.array([1, 1])
+    start_size = np.array(data.shape[-2:])
+    while any(final_size<start_size):
+        final_size *= factor
+
+    #
+    sized_data = data.clone()
+    sized_data = torch.nn.functional.interpolate(sized_data, list(final_size))
+    
+    return sized_data

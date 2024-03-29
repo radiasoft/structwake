@@ -1,5 +1,6 @@
 
 
+import torch
 import numpy as np
 
 def encode(length, dim, n=int(1e4), scale=1.):
@@ -16,13 +17,19 @@ def encode(length, dim, n=int(1e4), scale=1.):
     """    
 
     # Compute sinusoid arguments
-    num = np.arange(0, length).reshape(length,1)
-    den = np.exp(np.arange(0, dim, 2) * -(np.log(n) / dim))    
+    num = torch.arange(0, length).reshape(length,1)
+    den = torch.exp(torch.arange(0, dim, 2) * -(np.log(n) / dim))    
 
-    # Compute & scale positional encoding
-    PE = np.zeros((length, dim))
-    PE[:, 0::2] = np.sin(num * den)
-    PE[:, 1::2] = np.cos(num * den)
+    # Compute even & odd positional encodings (trimming odds if needed)
+    evens = torch.sin(num * den)
+    odds = torch.cos(num * den)
+    if dim%2:
+        odds = odds[:, :-1]
+
+    # Combine & scale positional encodings
+    PE = torch.zeros((length, dim), dtype=torch.float)
+    PE[:, 0::2] = evens
+    PE[:, 1::2] = odds
     PE *= scale / PE.max()
 
     return PE.squeeze()

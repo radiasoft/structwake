@@ -18,10 +18,6 @@ class MAE(torch.nn.Module):
         self, in_channels, n_out, n_layers, n_filters, conv_kernel=3, pool_kernel=2,
         conv_activation='ReLU', output_activation="Sigmoid", dropout=.1, dimension=2, action="contract"
 
-        n_hidden = n_modes * n_features
-
-        self.encoder = CNN(n_modes,,action="contract")
-        self.decoder = CNN(n_modes,,action="expand")
 
     def mask(self, Gr):
 

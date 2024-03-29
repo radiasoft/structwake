@@ -1,4 +1,5 @@
 
+import torch
 import numpy as np
 
 def patch2D(data, patch_dims):
@@ -14,23 +15,24 @@ def patch2D(data, patch_dims):
 
     # Determine whether 2D data has channels
     if len(data.shape)==3:
-        channel_dims = (data.shape[-1],)
+        channel_dims = (data.shape[0],)
+        dat_dims = torch.tensor(data.shape[1:])
     else:
         channel_dims = ()
+        dat_dims = torch.tensor(data.shape)
     
     # Assign original positions to patches
-    dat_dims = np.array(data.shape[:2])
     nx, ny = dat_dims // patch_dims
-    patches = np.array([
+    patches = torch.tensor([
         [[x*patch_dims[0], (x+1)*patch_dims[0]], [y*patch_dims[1], (y+1)*patch_dims[1]]]
         for y in range(ny) for x in range(nx)
     ])
 
     # Assign original data to patched data
-    patched_data = np.zeros((nx*ny,)+tuple(patch_dims)+channel_dims)
+    patched_data = torch.zeros((nx*ny,)+channel_dims+tuple(patch_dims))
     for p in range(nx*ny):
         pxs, pys = patches[p]
-        patched_data[p] = data[pxs[0]:pxs[1], pys[0]:pys[1]]
+        patched_data[p] = data[..., pxs[0]:pxs[1], pys[0]:pys[1]]
 
     return patched_data
 
@@ -48,7 +50,7 @@ def patch3D(data, patch_dims):
     dat_dims = np.array(data.shape[:3])
     nx, ny, nz = dat_dims // patch_dims
 
-    patches = np.array([
+    patches = torch.tensor([
         [[x*nx, (x+1)*nx], [y*ny, (y+1)*ny], [z*nz, (z+1)*nz]] 
         for z in range(nz) for y in range(ny) for x in range(nx)
     ])
@@ -104,7 +106,7 @@ def unpatch3D(patched_data, patches):
 
     return data
     
-def mask_data(data, p_mask, mask_val=0., rseed=None):
+def mask_data(data, p_mask, mask_val=None, rseed=None):
     """Returns a random mask for input data
 
     Args:
@@ -115,8 +117,9 @@ def mask_data(data, p_mask, mask_val=0., rseed=None):
       rseed: Random seed for selection repeatability (default None)
 
     Returns:
-      masked: Masked data
-      imasked: Inverse masked data
+      visible: Visible data after applying mask
+      hidden: Hidden data with visible data masked
+      (visibleIDs, hiddenIDs): Indices for visible & hidden data
     """
 
     if rseed is not None:
@@ -124,18 +127,18 @@ def mask_data(data, p_mask, mask_val=0., rseed=None):
 
     # Randomly select data indices to mask
     N = len(data)
-    maskIDs = np.random.choice(N, int(p_mask*N), replace=False)
-    imaskIDs = np.delete(np.arange(N), maskIDs)
-
-    # Mask by replacing values at indices
-    if mask_val is not None:
-      masked = data.copy()
-      masked[maskIDs] = mask_val
-      imasked = data-masked
+    hiddenIDs = np.random.choice(N, int(p_mask*N), replace=False)
+    visibleIDs = np.delete(np.arange(N), hiddenIDs, axis=0)
 
     # Mask by removing values at indices
+    if mask_val is None:
+      visible = data[list(visibleIDs)]
+      hidden = data[list(hiddenIDs)]
+    
+    # Mask by replacing values at indices
     else:
-        masked = np.delete(data, maskIDs)
-        imasked = np.delete(data, imaskIDs)
+      visible = data.clone()
+      visible[hiddenIDs] = mask_val
+      hidden = data-visible
 
-    return masked, imasked, (maskIDs, imaskIDs)
+    return visible, hidden, visibleIDs, hiddenIDs

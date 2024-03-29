@@ -1,0 +1,33 @@
+# -*- coding: utf-8 -*-
+
+[project]
+name = "mlgreens"
+version = "0.0.0"
+authors = [{name="RadiaSoft LLC", email="pip@radiasoft.net"},]
+description = "Machine learning for Green's functions in Python"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "argparse", 
+    "ruamel.yaml",
+    "scipy",
+    "numpy",
+    "torch",
+]
+
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "License :: OSI Approved :: Apache-2.0",
+    "Operating System :: OS Independent",
+]
+
+[project.scripts]
+mlg_train = "mlgreens._scripts:train_model"
+mlg_tune = "mlgreens._scripts:tune_model"
+mlg_test = "mlgreens._scripts:test_model"
+
+[project.urls]
+"Homepage" = "https://github.com/radiasoft/structwake"
+"Bug Tracker" = "https://github.com/radiasoft/structwake/issues"
