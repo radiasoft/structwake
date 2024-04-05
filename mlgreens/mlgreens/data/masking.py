@@ -23,16 +23,19 @@ def patch2D(data, patch_dims):
     
     # Assign original positions to patches
     nx, ny = dat_dims // patch_dims
-    patches = torch.tensor([
-        [[x*patch_dims[0], (x+1)*patch_dims[0]], [y*patch_dims[1], (y+1)*patch_dims[1]]]
-        for y in range(ny) for x in range(nx)
+    patches = torch.tensor([[
+        [
+            [x*patch_dims[0], (x+1)*patch_dims[0]],
+            [y*patch_dims[1], (y+1)*patch_dims[1]]
+        ] for y in range(ny)] for x in range(nx)
     ])
 
     # Assign original data to patched data
-    patched_data = torch.zeros((nx*ny,)+channel_dims+tuple(patch_dims))
-    for p in range(nx*ny):
-        pxs, pys = patches[p]
-        patched_data[p] = data[..., pxs[0]:pxs[1], pys[0]:pys[1]]
+    patched_data = torch.zeros((nx, ny,)+channel_dims+tuple(patch_dims))
+    for x in range(nx):
+        for y in range(ny):
+          pxs, pys = patches[x, y]
+          patched_data[x, y] = data[..., pxs[0]:pxs[1], pys[0]:pys[1]]
 
     return patched_data
 
@@ -68,19 +71,29 @@ def unpatch2D(patched_data, full_dims):
       data:
     """
 
+    # Determine whether 2D data has channels
+    if len(patched_data.shape)==5:
+        channel_dims = (patched_data.shape[2],)
+    else:
+        channel_dims = ()
     patch_dims = np.array(patched_data.shape[-2:])
+
+    #
     nx, ny = full_dims // patch_dims
-    patches = np.array([
-        [[x*patch_dims[0], (x+1)*patch_dims[0]], [y*patch_dims[1], (y+1)*patch_dims[1]]]
-        for y in range(ny) for x in range(nx)
+    patches = torch.tensor([[
+        [
+            [x*patch_dims[0], (x+1)*patch_dims[0]],
+            [y*patch_dims[1], (y+1)*patch_dims[1]]
+        ] for y in range(ny)] for x in range(nx)
     ])
 
     # Reconstruct data from patches
-    data = np.zeros(full_dims)
-    for p in range(nx*ny):
-        pxs, pys = patches[p]
-        data[pxs[0]:pxs[1], pys[0]:pys[1]] = patched_data[p]
-
+    data = np.zeros(channel_dims+full_dims)
+    for x in range(nx):
+        for y in range(ny):
+          pxs, pys = patches[x, y]
+          data[..., pxs[0]:pxs[1], pys[0]:pys[1]] = patched_data[x, y]
+          
     return data
 
 def unpatch3D(patched_data, patches):
@@ -105,6 +118,56 @@ def unpatch3D(patched_data, patches):
         data[pxs[0]:pxs[1], pys[0]:pys[1], pzs[0]:pzs[1]] = patched_data[p]
 
     return data
+
+def random_mask2D(shape, p_mask, sizes=None, rseed=None):
+    
+    if rseed is not None:
+        np.random.seed(rseed)
+
+    mask = torch.zeros(shape, dtype=bool)
+    shape = np.array(shape)
+
+    # Do 
+    if sizes is None:
+        w, h = shape
+        n_rand = int(p_mask * shape.prod())
+        masked_IDs = np.random.randint(low=[0, 0], high=[w, h], size=(n_rand, 2))
+        mask[masked_IDs[:, 0], masked_IDs[:, 1]] = True
+
+    # Do
+    else:
+        
+        # Assign original positions to patches
+        nx, ny = shape // sizes
+        patches = torch.tensor([[
+            [
+                [x * sizes[0], (x+1) * sizes[0]],
+                [y * sizes[1], (y+1) * sizes[1]]
+            ] for y in range(ny)] for x in range(nx)
+        ])
+
+        # Randomly select patches to mask
+        n_rand = int(p_mask * nx*ny)
+        masked_IDs = np.random.randint(low=[0, 0], high=[nx, ny], size=(n_rand, 2))
+
+        #
+        for id in masked_IDs:
+            pxs, pys = patches[id[0], id[1]]
+            mask[pxs[0]:pxs[1], pys[0]:pys[1]] = True
+
+    return mask
+
+def grid_mask2D(shape, grid):
+    
+    # Randomly select data indices to mask
+    w, h = shape
+    gstep = shape // grid
+
+    # Mask by replacing values at indices
+    mask = np.zeros(shape)
+    mask[::gstep[0], ::gstep[1]] = 1.
+
+    return mask
     
 def mask_data(data, p_mask, mask_val=None, rseed=None):
     """Returns a random mask for input data

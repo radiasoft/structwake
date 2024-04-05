@@ -1,11 +1,11 @@
 
-
+import torch
 import numpy as np
 
 from mlgreens import data
 
-class GreensPatches(data.GreensData):
-    """A set of Green's function data read from an HDF5 file then patched & masked"""
+class GreensMasked(data.GreensData):
+    """A set of Green's function data read from an HDF5 file then masked"""
 
     def __init__(self, file_path, p_masks, sizes, seed=None):
         """Args:
@@ -20,30 +20,28 @@ class GreensPatches(data.GreensData):
 
         # Set masking ratio & randomly select patch sizes
         self.p_masks = np.random.choice(p_masks, len(self))
-        self.patch_sizes = sizes[np.random.choice(len(sizes), len(self))]
-        
-    def __len__(self):
-        """Returns the length of the dataset"""
-        
-        return len(self.GData)
+        self.sizes = sizes[np.random.choice(len(sizes), len(self))]
 
     def __getitem__(self, index):
         """Retrieves an item from the dataset by index"""
         
-        # Retrieve raw Green's function data
-        G = self.GData[index]
+        # Retrieve raw Green's function data & mask parameters
+        G = super().__getitem__(index)
+        p = self.p_masks[index]
+        size = self.sizes[index]
 
-        # Split data into patches
-        G_patches = data.patch2D(G, self.patch_sizes[index])
+        # Compute 2D mask for this sample
+        shape = G.shape[-2:]
+        mask = data.random_mask2D(shape, p, size)
 
-        # Mask data, keeping visible patches
-        G_vis, G_hid, vIDs, hIDs = data.mask_data(G_patches, self.p_masks[index], mask_val=None)
-
-        return (G_vis, G_hid, vIDs, hIDs)
+        return G, mask
     
     def collator(self, batch):
 
-        return batch
+        G_batch = torch.stack([sample[0] for sample in batch])
+        mask_batch = torch.stack([sample[1] for sample in batch])
+
+        return G_batch, mask_batch
     
     def get_attrs(self, index):
         """Retrieves attributes for item from the dataset by index"""

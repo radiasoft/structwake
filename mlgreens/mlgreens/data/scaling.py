@@ -14,10 +14,19 @@ def scale_minmax(input_tensor):
     """
 
     output_tensor = input_tensor.detach().clone()
-    scales = [output_tensor.min(),]
-    output_tensor -= scales[0]
-    scales.append(output_tensor.max())
-    output_tensor /= scales[1]
+
+    if len(input_tensor.shape)==2:
+        scales = [output_tensor.min(),]
+        output_tensor -= scales[0]
+        scales.append(output_tensor.max())
+        if scales[-1]!=0:
+          output_tensor /= scales[1]
+
+    else:
+        scales = []
+        for i in range(len(output_tensor)):
+            output_tensor[i], layer_scales = scale_minmax(output_tensor[i])
+            scales.append(layer_scales)
 
     return output_tensor, scales
 
@@ -32,7 +41,11 @@ def unscale_minmax(input_tensor, scales):
       output_tensor: Rescaled data
     """
 
-    output_tensor = input_tensor.detach.clone()
+    #
+    output_tensor = input_tensor.detach().clone()
+    output_tensor, _ = scale_minmax(output_tensor)
+
+    #
     output_tensor *= scales[1]
     output_tensor += scales[0]
 

@@ -31,7 +31,8 @@ class Model(torch.nn.Module):
         """
 
         with h5py.File(path, "w") as model_file:
-            for h, hyper in self.hypers.items():
+            for h in self.hypers:
+                hyper = getattr(self, h)
                 model_file.attrs[h] = hyper
             for s, state in self.state_dict().items():
                 model_file.create_dataset(s, data=state.numpy())      

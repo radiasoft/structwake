@@ -14,7 +14,7 @@ class MCAE(Model):
 
     def __init__(
             self, n_modes, n_features, cnn_layers=3, conv_kernel=3, sample_kernel=2,
-            f_encode=.1, dropout=.1, dimension=2, conv_activation="LeakyReLU", output_activation="Sigmoid"
+            dropout=.1, dimension=2, conv_activation="LeakyReLU", output_activation="Sigmoid"
     ):
         
         # Store input arguments
@@ -55,10 +55,6 @@ class MCAE(Model):
         self.to_features = torch.nn.Linear(self.dense_dim, n_features)
         self.from_features = torch.nn.Linear(n_features, self.dense_dim)
 
-        # Add a dense layer for learning masked tokens
-        self.tokenizer = torch.nn.Linear(1, n_features)
-        self.get_tokens = lambda nh: self.tokenizer(torch.ones(1)).expand(nh, n_features)
-
         # Add convolutional layers along the expansion path (with optional dropout layers)
         for l in range(cnn_layers):
             filters = [n_modes*2**(cnn_layers-l), n_modes*2**(cnn_layers-l-1)]
@@ -78,62 +74,23 @@ class MCAE(Model):
             output_activation()
         )
 
-    def preprocess(self, G_patches):
+    def forward(self, G):
 
-        # Perform 0/1 scaling on input, leaving room for positional encoding
-        G, scales = data.scale_minmax(G_patches)
-        G *= (1.-self.f_encode)
-
-        # Resize patches for convolutional encoding/decoding
-        G = data.factor_resize(G, self.channel_gain)
-
-        return G, scales
-    
-    def postprocess(self, G_patches, scales, size):
-
-        # Undo patch resizing & 0/1 scaling
-        G = torch.nn.functional.interpolate(G_patches, size)
-        G = data.unscale_minmax(G, scales)
-
-        return G
-
-    def forward(self, G_patches, visible_IDs, hidden_IDs):
-                
-        # Gather information about patch number & dimensions
-        n_vis = len(visible_IDs)
-        n_hid = len(hidden_IDs)
-        n_patches = n_vis + n_hid
-        patch_dims = np.array(G_patches.shape[-2:])
-
-        # Positionally encode & rescale visible patches of data
-        PE_dims = np.array([n_vis, self.n_modes, *patch_dims])
-        PE_in = data.encode(n_vis, PE_dims[1:].prod(), scale=self.f_encode).reshape((*PE_dims,))
-        G_enc = G_patches.detach() + PE_in.detach()
-
-        # Create positional encodings for feature space data
-        PE_feat = data.encode(n_patches, self.n_features, scale=self.f_encode)
-        PE_vis = PE_feat[visible_IDs].detach()
-        PE_hid = PE_feat[hidden_IDs].detach()
-
-        # Compute hidden vectors for visible samples
-        h_vis = self.input_layer(G_enc)
+        # Compute hidden vectors
+        h = self.input_layer(G)
         for l in range(self.cnn_layers):
-            h_vis = getattr(self, "contraction-layer_{:d}".format(l+1))(h_vis)
+            h = getattr(self, "contraction-layer_{:d}".format(l+1))(h)
 
-        # Flatten bottleneck vector for visible samples
-        dense_shape = np.array(h_vis.shape[-2:])
-        h_vis = h_vis.flatten(start_dim=1).unsqueeze(1)
+        # Flatten bottleneck vectors
+        dense_shape = np.array(h.shape[-2:])
+        h = h.flatten(start_dim=1).unsqueeze(1)
 
         # Reduce flattened bottleneck vector dimensions with pooling
         pool_size = int(dense_shape.prod())
-        h_vis = torch.nn.functional.max_pool1d(h_vis, pool_size).squeeze()
+        h = torch.nn.functional.max_pool1d(h, pool_size).squeeze()
 
-        # Compute & combine encoded feature vectors for visible & hidden samples
-        X_vis = self.to_features(h_vis) + PE_vis
-        X_hid = self.get_tokens(n_hid) + PE_hid
-        X = torch.zeros((n_patches, self.n_features))
-        X[visible_IDs] = X_vis
-        X[hidden_IDs] = X_hid
+        # Compute encoded feature vectors
+        X = self.to_features(h) #+ PE_vis
 
         #
         h = self.from_features(X)[...,None,None]
@@ -154,21 +111,26 @@ class MCAE(Model):
         if self.training:
             self.eval()
 
-        G_proc, scales = self.preprocess(G)
-        G_pred, X = self(G_proc)
-        G_pred, _ =  data.unscale_minmax(G_pred, scales)
-        G_pred = torch.nn.functional.interpolate(G_pred, G.shape)
+        G_rs = data.factor_resize(G, self.channel_gain)
+        G_pred, X = self(G_rs)
+        G_pred = torch.nn.functional.interpolate(G_pred, G.shape[-2:])
 
         return G_pred, X
 
     def fit(
-            self, patch_data, val_split=.9, loss='mse_loss', num_epochs=1000,
-            lr=1.e-3, optimizer='Adam', rseed=None, verbose=False, print_every=1,
+            self, masked_data, val_split=.9, loss='mse_loss', num_epochs=1000, batch_size=20,
+            lr=1.e-3, optimizer='Adam', num_workers=1, seed=None, verbose=False, print_every=1,
             save_archive=True, archive_path="./MCAE-training.h5", save_model=True, model_path="MCAE.h5"
         ):
         
-        train_data, val_data = data.split_data(patch_data, val_split, seed=rseed)
-        loader_args = {"shuffle":True, "collate_fn": patch_data.collator}
+        # Set up data loaders for training & validation data
+        train_data, val_data = data.split_data(masked_data, val_split, seed=seed)
+        loader_args = {
+            "shuffle":True,
+            "batch_size": batch_size,
+            "num_workers": num_workers,
+            "collate_fn": masked_data.collator
+        }
         train_loader = torch.utils.data.DataLoader(train_data, **loader_args)
         val_loader = torch.utils.data.DataLoader(val_data, **loader_args)
 
@@ -183,51 +145,41 @@ class MCAE(Model):
         # Loop over training epochs
         self.train()
         for e in range(num_epochs):
-
             train_losses = []
             val_losses = []
             
-            # Loop over training batches
-            s=0
-            for sample in train_loader:
-                s+=1
+            # Loop over batches of training data
+            for Gs, masks in train_loader:
 
-                #
-                G_vis, G_hid, vIDs, hIDs = sample[0]
-                G_vis, _ = self.preprocess(G_vis)
-                G_hid, _ = self.preprocess(G_hid)
-                
-                # Compute loss for current model
-                G_pred, _ = self(G_vis.detach(), vIDs, hIDs)
-                G_true = torch.zeros(G_pred.shape)
-                G_true[vIDs] = G_vis.detach()
-                G_true[hIDs] = G_hid.detach()
-                loss = loss_fun(G_true, G_pred)
+                if torch.cuda.is_available():
+                    Gs.cuda()
+                    masks.cuda()
 
-                # Update model weights
+                # Mask data samples
+                mode_masks = torch.stack([masks,]*self.n_modes, axis=1)
+                Gs[mode_masks] = -1.
+
+                # Pass masked data through network
+                Gs = data.factor_resize(Gs, self.channel_gain)
+                Gs_pred, _ = self(Gs)
+
+                # Compute loss & update model weights
+                batch_loss = loss_fun(Gs, Gs_pred)
                 opt.zero_grad()
-                loss.backward()
+                batch_loss.backward()
                 opt.step()
 
-                train_losses.append(loss.detach())
+                train_losses.append(batch_loss.detach())
 
             # Evaluate updated model on validation data
             self.eval()
-            for sample in val_loader:
-                G_vis, G_hid, vIDs, hIDs = sample[0]
-                G_vis, _ = self.preprocess(G_vis)
-                G_hid, _ = self.preprocess(G_hid)
-                
-                # Compute loss for current model
-                G_pred, _ = self(G_vis, vIDs, hIDs)
-                G_true = torch.zeros(G_pred.shape)
-                G_true[vIDs] = G_vis.detach()
-                G_true[hIDs] = G_hid.detach()
-                val_loss = loss_fun(G_true, G_pred)
-
+            for Gs, masks in val_loader:
+                mode_masks = torch.stack([masks,]*self.n_modes, axis=1)
+                Gs[mode_masks] = -1.
+                Gs = data.factor_resize(Gs, self.channel_gain)
+                Gs_pred, _ = self(Gs)
+                val_loss = loss_fun(Gs, Gs_pred)
                 val_losses.append(val_loss.detach())
-
-            self.train()
 
             # Compute & store final epoch loss statistics
             train_losses = np.array(train_losses)
@@ -239,8 +191,11 @@ class MCAE(Model):
             if verbose and not (e%print_every):
                 ostr = "EPOCH {:d}\n".format(e+1)
                 for ltype, lstats in losses.items():
-                    ostr += ltype+": {:.3f} (std {:.3f})\n".format(lstats[e])
+                    ostr += ltype.capitalize()+" Loss: {:.3f} (std {:.3f})\n".format(*lstats[e])
                 print(ostr)
+
+            #
+            self.train()
 
         # Save model & training archive if requested
         if save_model:

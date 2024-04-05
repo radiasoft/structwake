@@ -4,10 +4,10 @@ import numpy as np
 
 from mlgreens import data
 
-class GreensPatches(data.GreensData):
-    """A set of Green's function data read from an HDF5 file then patched & masked"""
+class GreensGrid(data.GreensData):
+    """A set of Green's function data read from an HDF5 file then masked"""
 
-    def __init__(self, file_path, p_masks, sizes, seed=None):
+    def __init__(self, file_path, grid_steps, seed=None):
         """Args:
           - file_path: Path to the HDF5 data file
         """
@@ -18,20 +18,17 @@ class GreensPatches(data.GreensData):
         if seed is not None:
             np.random.seed(seed)
 
-        # Set masking ratio & randomly select patch sizes
-        self.p_masks = np.random.choice(p_masks, len(self))
-        self.patch_sizes = sizes[np.random.choice(len(sizes), len(self))]
-        
-    def __len__(self):
-        """Returns the length of the dataset"""
-        
-        return len(self.GData)
+        #
+        self.grid_steps = []
+        for i in range(len(self)):
+
+            self.grid_steps.append(np.random.choice())
 
     def __getitem__(self, index):
         """Retrieves an item from the dataset by index"""
         
         # Retrieve raw Green's function data
-        G = self.GData[index]
+        G = super().__getitem__(index)
 
         # Split data into patches
         G_patches = data.patch2D(G, self.patch_sizes[index])
@@ -39,16 +36,12 @@ class GreensPatches(data.GreensData):
         # Mask data, keeping visible patches
         G_vis, G_hid, vIDs, hIDs = data.mask_data(G_patches, self.p_masks[index], mask_val=None)
 
-        return (G_vis, G_hid, vIDs, hIDs)
-    
-    def collator(self, batch):
-
-        return batch
+        return G_grid
     
     def get_attrs(self, index):
         """Retrieves attributes for item from the dataset by index"""
         
-        attrs = {"p_mask":self.p_masks[index], "patch_dims": self.patch_sizes[index]}
-        attrs.update(self.GData.get_attrs(index))
+        attrs = super().get_attrs(index).copy()
+        attrs.update({"grid_step": self.grid_steps[index]})
 
         return attrs
